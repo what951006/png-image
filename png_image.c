@@ -1,197 +1,96 @@
-/*
- * Copyright 2002-2010 Guillaume Cottenceau.
- * Copyright 2014- Li XianJing <xianjimli@hotmail.com>
- *
- * This software may be freely redistributed under the terms
- * of the X11 license.
- *
- */
-
-#define PNG_DEBUG 3
-
-#include <unistd.h>
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <stdarg.h>
-
-#include <png.h>
 #include "png_image.h"
 
-#define return_val_if_fail(p, val) if(!(p)) \
-	{ printf("%s:%d "#p" failed.\n", __func__, __LINE__); return (val);}
+#include <setjmp.h>
+#include <png.h>
 
-ImageData* png_image_load(char* file_name)
+
+
+#define PNG_READ_HEADER 4
+
+int read_chunk_callback(png_structp ptr, png_unknown_chunkp chunk)
 {
-	unsigned int y = 0;
-	png_byte bit_depth = 0;
-	unsigned int width = 0;
-	unsigned int height = 0;
-	int number_of_passes = 0;
-	png_byte color_type = 0;
-	ImageData* image = NULL;
-
-	png_infop info_ptr = NULL;
-	png_structp png_ptr = NULL;
-	png_bytep * row_pointers = NULL;
-
-	char header[8];	   // 8 is the maximum size that can be checked
-	int rowbytes = 0;
-
-	FILE *fp = fopen(file_name, "rb");
-	return_val_if_fail(fp, NULL);
-
-	fread(header, 1, 8, fp);
-	return_val_if_fail(png_sig_cmp(header, 0, 8) == 0, NULL);
-
-	png_ptr = png_create_read_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
-	return_val_if_fail(png_ptr, NULL);
-
-	info_ptr = png_create_info_struct(png_ptr);
-	return_val_if_fail(info_ptr, NULL);
-
-	return_val_if_fail(setjmp(png_jmpbuf(png_ptr)) == 0, NULL);
-
-	png_init_io(png_ptr, fp);
-	png_set_sig_bytes(png_ptr, 8);
-
-	png_read_info(png_ptr, info_ptr);
-
-	width = png_get_image_width(png_ptr, info_ptr);
-	height = png_get_image_height(png_ptr, info_ptr);
-	color_type = png_get_color_type(png_ptr, info_ptr);
-	bit_depth = png_get_bit_depth(png_ptr, info_ptr);
-
-	number_of_passes = png_set_interlace_handling(png_ptr);
-	png_read_update_info(png_ptr, info_ptr);
-
-	return_val_if_fail(setjmp(png_jmpbuf(png_ptr)) == 0, NULL);
-	
-	rowbytes = png_get_rowbytes(png_ptr,info_ptr);
-	row_pointers = (png_bytep*) malloc(sizeof(png_bytep) * height);
-
-	for (y=0; y<height; y++) 
-	{
-		row_pointers[y] = (png_byte*) malloc(rowbytes);
-	}
-
-	png_read_image(png_ptr, row_pointers);
-
-	fclose(fp);
-
-	image = malloc(sizeof(ImageData));
-	image->width = width;
-	image->height = height;
-	image->rows = row_pointers;
-	image->rowbytes = rowbytes;
-	image->color_type = color_type;
-	image->bit_depth = bit_depth;
-
-	return image;
-}
-
-int png_image_save(char* file_name, ImageData* image)
-{
-	unsigned int y;
-	unsigned int width = image->width;
-	unsigned int height = image->height;
-	png_byte color_type = image->color_type;
-	png_byte bit_depth = image->bit_depth;
-	png_bytep* row_pointers = image->rows;
-
-	png_structp png_ptr = NULL;
-	png_infop info_ptr = NULL;
-
-	FILE *fp = fopen(file_name, "wb");
-	return_val_if_fail(fp, 0);
-
-	png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
-	return_val_if_fail(png_ptr, 0);
-
-	info_ptr = png_create_info_struct(png_ptr);
-	return_val_if_fail(info_ptr, 0);
-
-	return_val_if_fail(setjmp(png_jmpbuf(png_ptr)) == 0, 0);
-	png_init_io(png_ptr, fp);
-
-	return_val_if_fail(setjmp(png_jmpbuf(png_ptr)) == 0, 0);
-
-	png_set_IHDR(png_ptr, info_ptr, width, height,
-		     bit_depth, color_type, PNG_INTERLACE_NONE,
-		     PNG_COMPRESSION_TYPE_BASE, PNG_FILTER_TYPE_BASE);
-
-	png_write_info(png_ptr, info_ptr);
-
-	return_val_if_fail(setjmp(png_jmpbuf(png_ptr)) == 0, 0);
-	png_write_image(png_ptr, row_pointers);
-
-	return_val_if_fail(setjmp(png_jmpbuf(png_ptr)) == 0, 0);
-	png_write_end(png_ptr, NULL);
-
-	fclose(fp);
-
 	return 1;
 }
 
-void png_image_destroy(ImageData* image)
+void read_row_callback(png_structp ptr, png_uint_32 row, int pass)
 {
-	unsigned int y = 0;
 
-	if(image) {
-		unsigned int height = image->height;
-		unsigned char** row_pointers = image->rows;
-
-		if(row_pointers) {
-			for (y=0; y<height; y++)
-			{
-				free(row_pointers[y]);
-			}
-			free(row_pointers);
-		}
-
-		image->rows = NULL;
-		free(image);
-	}
-
-	return;
 }
 
-
-#ifdef PNG_IMAGE_TEST
-void process_file(ImageData* image)
+int png_read(const char* filename, png_datap data)
 {
-	int x, y;
-	unsigned int height = image->height;
-	unsigned int width = image->width;
-	png_bytep* row_pointers = image->rows;
-	
-	for (y=0; y<height; y++) {
-			png_byte* row = row_pointers[y];
-			for (x=0; x<width; x++) {
-				/*TODO*/
-			}
-	}
-}
+	FILE *fp = fopen(filename, "rb");
+	if (fp == NULL) return PNG_ERROR_NO_FILE;
 
+	fseek(fp, 0, SEEK_END);
+	int fSize = ftell(fp);
+	rewind(fp);
+	unsigned char* header = (unsigned char*)malloc(PNG_READ_HEADER);
+	fread(header, 1, PNG_READ_HEADER, fp);
+	int is_png = !png_sig_cmp(header, 0, PNG_READ_HEADER);
+	if (!is_png) return PNG_ERROR_NOT_PNG;
 
-int main(int argc, char **argv)
-{
-	if (argc != 3)
+	png_structp png_ptr;
+	png_ptr = png_create_read_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
+	if (!png_ptr) return PNG_ERROR_CREATE_PNG_STRUCT;
+
+	png_infop info_ptr;
+	info_ptr = png_create_info_struct(png_ptr);
+	if (!info_ptr)
 	{
-		printf("Usage: %s <file_in> <file_out>\n", argv[0]);
-
-		return 1;
+		printf("create info struct failed!\n");
+		png_destroy_read_struct(&png_ptr, NULL, NULL);
+		return PNG_ERROR_CREATE_INFO_STRUCT;
 	}
+	png_infop end_info;
+	end_info = png_create_info_struct(png_ptr);
+	if (!end_info)
+	{
+		printf("create end info failed!\n");
+		png_destroy_read_struct(&png_ptr, NULL, NULL);
+		return PNG_ERROR_CREATE_INFO_STRUCT;
+	}
+	if (setjmp(png_jmpbuf(png_ptr)))
+	{
+		png_destroy_read_struct(&png_ptr, &info_ptr, &end_info);
+		return PNG_ERROR_JMP;
+	}
+	png_init_io(png_ptr, fp);
+	png_set_sig_bytes(png_ptr, PNG_READ_HEADER);
+	// png_voidp user_chunk_ptr = png_get_user_chunk_ptr(png_ptr);
+	// png_set_read_user_chunk_fn(png_ptr,user_chunk_ptr,read_chunk_callback);
+	// png_set_keep_unknown_chunks(png_ptr,PNG_HANDLE_CHUNK_NEVER,NULL,0);
 
-	ImageData* image = png_image_load(argv[1]);
-	
-	process_file(image);
+	//png_set_read_status_fn(png_ptr,read_row_callback);
 
-	png_image_save(argv[2], image);
-	
-	png_image_destroy(image);
+	//low lever read
+	png_read_info(png_ptr, info_ptr);
+	png_uint_32 width;
+	png_uint_32 height;
+	int bit_depth;
+	int color_type;
+	png_get_IHDR(png_ptr, info_ptr, &width, &height, &bit_depth, &color_type, NULL, NULL, NULL);
+	// printf("width:%d,height:%d,bit_depth:%d,color_type:%d",width,height,bit_depth,color_type);
 
-	return 0;
+	png_bytep raw_data = (png_bytep)malloc(width*height * 4 * sizeof(png_byte));
+	// printf("row bytes:%d\n",png_get_rowbytes(png_ptr,info_ptr));
+
+	png_bytep *row_pointers = (png_bytep*)malloc(height * sizeof(png_bytep));
+	for (int i = 0; i < height; i++)
+	{
+		row_pointers[i] = raw_data + i* (width * 4);
+	}
+	png_read_image(png_ptr, row_pointers);
+
+	data->width = width;
+	data->height = height;
+	data->data = (char*)raw_data;
+	// printf("png_read_success\n");
+
+	//clean
+	fclose(fp);
+	png_destroy_read_struct(&png_ptr, &info_ptr, &end_info);
+	free(row_pointers);
+
+	return PNG_READ_SUCCESS;
 }
-#endif
-
